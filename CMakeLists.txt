@@ -16,6 +16,7 @@ find_package(std_msgs REQUIRED)
 
 add_executable(subscriber_teensy_reset teensy_reset.cpp)
 ament_target_dependencies(subscriber_teensy_reset rclcpp std_msgs)
+target_link_libraries(subscriber_teensy_reset usb)
 
 install(TARGETS
   subscriber_teensy_reset
