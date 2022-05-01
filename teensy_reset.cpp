@@ -27,13 +27,28 @@ public:
   {
     subscription_ = this->create_subscription<std_msgs::msg::Empty>(
       "teensy_reset", 10, std::bind(&MinimalSubscriber::topic_callback, this, _1));
+    
+    topic_callback(NULL);
   }
 
 private:
-  void topic_callback(const std_msgs::msg::Empty::SharedPtr msg)
+  void topic_callback(__attribute__((unused)) const std_msgs::msg::Empty::SharedPtr msg)
   {
-    teensy_open();
-    soft_reboot();
+    unsigned char buf[2048];
+    bool need_to_reset = true;
+    while (1) {
+      if (teensy_open()) break;
+      if (need_to_reset) {
+        if (soft_reboot()) {
+          RCLCPP_INFO(this->get_logger(), "Soft reboot performed\n");
+        }
+        need_to_reset = false;
+      }
+      usleep(250000.0);
+    }
+
+    //boot
+    boot(buf, 1088);
     teensy_close();
     
   }
@@ -107,6 +122,21 @@ private:
     if (libusb_teensy_handle) return 1;
     return 0;
   }
+  int teensy_write(void *buf, int len, double timeout)
+  {
+    int r;
+
+    if (!libusb_teensy_handle) return 0;
+    while (timeout > 0) {
+      r = usb_control_msg(libusb_teensy_handle, 0x21, 9, 0x0200, 0,
+        (char *)buf, len, (int)(timeout * 1000.0));
+      if (r >= 0) return 1;
+      //printf("teensy_write, r=%d\n", r);
+      usleep(10000);
+      timeout -= 0.01;  // TODO: subtract actual elapsed time
+    }
+    return 0;
+  }
   int soft_reboot(void)
   {
     usb_dev_handle *serial_handle = NULL;
@@ -131,6 +161,15 @@ private:
     }
 
     return 1;
+  }
+  void boot(unsigned char *buf, int write_size)
+  {
+    RCLCPP_INFO(this->get_logger(), "Booting\n");
+    memset(buf, 0, write_size);
+    buf[0] = 0xFF;
+    buf[1] = 0xFF;
+    buf[2] = 0xFF;
+    teensy_write(buf, write_size, 0.5);
   }
 };
 
